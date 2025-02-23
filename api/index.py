@@ -27,6 +27,7 @@ def proxy(subpath):
 
     except requests.exceptions.RequestException as e:
         return jsonify({"error": "Failed to fetch data", "details": str(e)}), 500
+
 @app.route('/tidalwater/<version>/', methods=['GET'])
 def tidalwater(version):
     """ Returns raw text from MET API for tidalwater """
@@ -41,7 +42,14 @@ def tidalwater(version):
 
     try:
         response = requests.get(met_url, headers=headers)
-        return Response(response.text, content_type='text/plain'), response.status_code
+        flask_response = Response(response.text, content_type='text/plain')
+
+        # Add CORS headers
+        flask_response.headers.add("Access-Control-Allow-Origin", "*")
+        flask_response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
+        flask_response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+
+        return flask_response, response.status_code
 
     except requests.exceptions.RequestException as e:
         return jsonify({"error": "Failed to fetch data", "details": str(e)}), 500
