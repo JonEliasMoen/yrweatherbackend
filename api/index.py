@@ -55,6 +55,34 @@ def tidalwater(version):
         return jsonify({"error": "Failed to fetch data", "details": str(e)}), 500
 
 
+@app.route('/map/<path:subpath>', methods=['GET'])
+def skisporet(subpath):
+    """ Returns raw text from skisporet """
+    query_string = request.query_string.decode("utf-8")
+    met_url = f"https://www.skisporet.no/map/{subpath}"
+    if query_string:
+        met_url += f"?{query_string}"
+
+    headers = {
+        "User-Agent": "YourApp/1.0 (your@email.com)",  # MET API requires User-Agent
+        "Authorization": "Basic c2tpc3BvcmV0LWFwaTokUk5qYnEjYjUkZFBwUzNDMnBRNjQmdGNI",
+    }
+
+    try:
+        response = requests.get(met_url, headers=headers)
+        flask_response = jsonify(response.json())
+
+        # Add CORS headers
+        flask_response.headers.add("Access-Control-Allow-Origin", "*")
+        flask_response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
+        flask_response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+
+        return flask_response, response.status_code
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": "Failed to fetch data", "details": str(e)}), 500
+
+
 @app.route('/about')
 def about():
     return 'About'
