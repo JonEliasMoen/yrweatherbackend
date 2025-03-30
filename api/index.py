@@ -97,32 +97,66 @@ def skisporet(subpath):
 def about():
     return 'About'
 
-@app.route('/strava/refresh', methods=['GET'])
-def getRefreshToken():
-    query = request.args.get('code')
+@app.route('/strava/refresh', methods=['GET', 'OPTIONS'])
+def get_refresh_token():
+    """Exchanges authorization code for an access token and refresh token."""
+    if request.method == 'OPTIONS':
+        return handle_cors()
+
+    code = request.args.get('code')
+    
+    if not code:
+        return jsonify({'error': 'Missing authorization code'}), 400
+    
     response = requests.post('https://www.strava.com/oauth/token', params={
         'client_id': '108568',
         'client_secret': app.config['CLIENT_SECRET'],
-        'code': query,
+        'code': code,
         'grant_type': 'authorization_code'
     })
-    flask_response = jsonify(response.json())
-    flask_response.headers.add("Access-Control-Allow-Origin", "*")
-    flask_response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
-    flask_response.headers.add("Access-Control-Allow-Headers", "Content-Type")
-    return flask_response, response.status_code
+    
+    return handle_response(response)
 
-@app.route('/strava/exchange')
-def about():
-    query = request.args.get('refresh_token')
-    response = requests.post('https://www.strava.com/api/v3/oauth/token ', params={
+@app.route('/strava/exchange', methods=['GET', 'OPTIONS'])
+def exchange_refresh_token():
+    """Exchanges refresh token for a new access token."""
+    if request.method == 'OPTIONS':
+        return handle_cors()
+
+    refresh_token = request.args.get('refresh_token')
+    
+    if not refresh_token:
+        return jsonify({'error': 'Missing refresh token'}), 400
+    
+    response = requests.post('https://www.strava.com/api/v3/oauth/token', params={
         'client_id': '108568',
         'client_secret': app.config['CLIENT_SECRET'],
-        'refresh_token': query,
+        'refresh_token': refresh_token,
         'grant_type': 'refresh_token'
     })
-    flask_response = jsonify(response.json())
-    flask_response.headers.add("Access-Control-Allow-Origin", "*")
-    flask_response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
-    flask_response.headers.add("Access-Control-Allow-Headers", "Content-Type")
-    return flask_response, response.status_code
+
+    return handle_response(response)
+
+def handle_response(response):
+    """Handles API response and applies CORS headers."""
+    try:
+        response_data = response.json()
+    except ValueError:
+        return jsonify({'error': 'Invalid JSON response from Strava'}), 500
+    
+    flask_response = jsonify(response_data)
+    flask_response.status_code = response.status_code
+    add_cors_headers(flask_response)
+    return flask_response
+
+def handle_cors():
+    """Handles CORS preflight requests."""
+    response = jsonify({'message': 'CORS preflight successful'})
+    add_cors_headers(response)
+    return response
+
+def add_cors_headers(response):
+    """Adds CORS headers to response."""
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type")
