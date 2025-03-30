@@ -1,6 +1,9 @@
 from flask import Flask, request, jsonify, Response
 import requests
+import os
 app = Flask(__name__)
+app.config['CLIENT_SECRET'] = os.environ.get('CLIENT_SECRET', 'default_secret_key')
+
 
 @app.route('/<path:subpath>', methods=['GET', 'OPTIONS'])
 def proxy(subpath):
@@ -93,3 +96,33 @@ def skisporet(subpath):
 @app.route('/about')
 def about():
     return 'About'
+
+@app.route('/strava/refresh', methods=['GET'])
+def getRefreshToken():
+    query = request.args.get('code')
+    response = requests.post('https://www.strava.com/oauth/token', params={
+        'client_id': '108568',
+        'client_secret': app.config['CLIENT_SECRET'],
+        'code': query,
+        'grant_type': 'authorization_code'
+    })
+    flask_response = jsonify(response.json())
+    flask_response.headers.add("Access-Control-Allow-Origin", "*")
+    flask_response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
+    flask_response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+    return flask_response, response.status_code
+
+@app.route('/strava/exchange')
+def about():
+    query = request.args.get('refresh_token')
+    response = requests.post('https://www.strava.com/api/v3/oauth/token ', params={
+        'client_id': '108568',
+        'client_secret': app.config['CLIENT_SECRET'],
+        'refresh_token': query,
+        'grant_type': 'refresh_token'
+    })
+    flask_response = jsonify(response.json())
+    flask_response.headers.add("Access-Control-Allow-Origin", "*")
+    flask_response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
+    flask_response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+    return flask_response, response.status_code
