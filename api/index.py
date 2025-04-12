@@ -161,7 +161,7 @@ def add_cors_headers(response):
     response.headers.add("Access-Control-Allow-Headers", "Content-Type")
     return response
 
-@app.route("/redirect" methods=['GET', 'OPTIONS'])
+@app.route("/redirect", methods=['GET', 'OPTIONS'])
 def strava_redirect():
     if request.method == 'OPTIONS':
         return handle_cors()
