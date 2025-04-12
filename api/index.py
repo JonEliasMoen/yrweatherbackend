@@ -1,6 +1,7 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, redirect
 import requests
 import os
+
 app = Flask(__name__)
 app.config['CLIENT_SECRET'] = os.environ.get('CLIENT_SECRET', 'default_secret_key')
 
@@ -160,3 +161,15 @@ def add_cors_headers(response):
     response.headers.add("Access-Control-Allow-Origin", "*")
     response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
     response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+
+
+@app.route("/redirect")
+def strava_redirect():
+    user_agent = request.headers.get("User-Agent", "").lower()
+    query_params = request.query_string.decode()
+
+    if "android" in user_agent:
+        return add_cors_headers(redirect(f"com.joneliasmewoen.yrweather://settings?{query_params}"))
+    else:
+        return add_cors_headers(redirect(f"https://yrweather.expo.app/settings?{query_params}"))
+    
