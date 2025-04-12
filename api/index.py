@@ -147,24 +147,24 @@ def handle_response(response):
     
     flask_response = jsonify(response_data)
     flask_response.status_code = response.status_code
-    add_cors_headers(flask_response)
-    return flask_response
+    return add_cors_headers(flask_response)
 
 def handle_cors():
     """Handles CORS preflight requests."""
     response = jsonify({'message': 'CORS preflight successful'})
-    add_cors_headers(response)
-    return response
+    return add_cors_headers(response)
 
 def add_cors_headers(response):
     """Adds CORS headers to response."""
     response.headers.add("Access-Control-Allow-Origin", "*")
     response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
     response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+    return response
 
-
-@app.route("/redirect")
+@app.route("/redirect" methods=['GET', 'OPTIONS'])
 def strava_redirect():
+    if request.method == 'OPTIONS':
+        return handle_cors()
     user_agent = request.headers.get("User-Agent", "").lower()
     query_params = request.query_string.decode()
 
