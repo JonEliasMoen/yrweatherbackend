@@ -188,18 +188,23 @@ acrs = [
 
 acrs = acwr
 
+def make_df(shift):
+    data = {
+        "ACRS" : acrs,
+        "ctl" : ctl,
+        "hrv":  pd.Series(hrv).replace(0, np.nan),
+    }
+    k = pd.DataFrame.from_dict(data).dropna()
+    k["aroll"] = k["ACRS"].rolling(shift).mean()
+    k["astdroll"] = k["ACRS"].rolling(shift).std()
+    return k
 
-data = {
-    "acrs" : acrs,
-    "ctl" : ctl,
-    
-}
 shift = 6
-k = pd.DataFrame.from_dict(data)
-k["aroll"] = k["acrs"].rolling(shift).mean()
-k["astdroll"] = k["acrs"].rolling(shift).std()
-
+k = make_df(shift)
 k["change"] = (k["ctl"]-k["ctl"].shift(shift))/k["ctl"]
+k["HRV_ratio"] = k["hrv"].ewm(span=4, adjust=False).mean() / k["hrv"].ewm(span=8, adjust=False).mean()
+
+
 k = k.dropna()
 k = k.sort_values(by="aroll")
 
@@ -226,28 +231,20 @@ def df_linpred(df, x, y, p, thres=1):
     rng = np.random.default_rng()
     final_s = lambda x: rng.normal(loc=poly1d_fn(x), scale=resstd)
     final = poly1d_fn
-    risk = lambda x: max(0, min(1, (thres - lower(x)) / (higher(x) - lower(x))))
+    #risk = lambda x: max(0, min(1, (thres - lower(x)) / (higher(x) - lower(x))))
+    def risk(x):
+        x = np.asarray(x, dtype=float)
+        val = (thres - lower(x)) / (higher(x) - lower(x))
+        val = np.clip(val, 0, 1)  # clamp between 0 and 1
+        if val.shape == ():  # scalar
+            return float(val)
+        return val
 
     return df, final_s, final, risk, err
 
-
-def pareto_frontier(df, risk_col="suppression_risk", reward_col="ctl_change_pct"):
-    risk = df[risk_col].to_numpy()
-    reward = df[reward_col].to_numpy()
-    points = np.array(list(zip(risk, reward)))
-    is_efficient = np.ones(points.shape[0], dtype=bool)
-
-    for i, (r, re) in enumerate(points):
-        if is_efficient[i]:
-            is_efficient[is_efficient] = ~(
-                (risk[is_efficient] <= r) & (reward[is_efficient] < re)
-            )
-            is_efficient[i] = True
-    return df[is_efficient].sort_values(risk_col)
-
 k, interp_change_rand, interp_change,  risk_c, err = df_linpred(k, "aroll", "change", 2, 0)
-
-
+print(k.sort_values(by="pred", ascending=False))
+cutpoint = k[k["pred"] == k["pred"].max()]["aroll"].to_numpy()[0]
 
 import matplotlib.pyplot as plt
 
@@ -259,22 +256,8 @@ plt.hlines([0], 0.6, 1.2)
 plt.title(str(err))
 plt.show()
 
-
-# Clean up HRV and align with ACRS
-hrv_series = pd.Series(hrv).replace(0, np.nan).dropna()
-acrs_series = pd.Series(acrs).iloc[hrv_series.index]
-
-# Compute HRV ratio (7d vs 42d EWM)
-hrv_short = hrv_series.ewm(span=4, adjust=False).mean()
-hrv_long  = hrv_series.ewm(span=8, adjust=False).mean()
-
-hrv_ratio = hrv_short / hrv_long
-
-df_hrv_ratio = pd.DataFrame({
-    "HRV_ratio": hrv_ratio,
-    "ACRS": acrs_series
-}).dropna()
-
+import copy
+df_hrv_ratio = copy.copy(k)
 print(df_hrv_ratio)
 
 # Shift HRV ratio by +6 days (lag effect)
@@ -291,38 +274,35 @@ plt.plot(df_hrv_ratio["ACRS"], df_hrv_ratio["pred_h"])
 plt.title(str(err))
 plt.show()
 
-
-test = {"ACRS" : np.linspace(dmin, dmax, 1000)}
-df = pd.DataFrame.from_dict(test)
-df = df_hrv_ratio
 def func(x):
-    if x > 1.1:
-        return 1
-    else:
-        return 1-risk_c(x)
+    res = 1-risk_c(x)
+    res[x > cutpoint] = 1
+    return res
+    
 
-df["change"] = interp_change(df["ACRS"])
-df["risk_c"] = [func(k) for k in df["ACRS"].to_numpy()]
-df["risk"] = [risk_interp(k) for k in df["ACRS"].to_numpy()]
-front = pareto_frontier(df, "risk", "risk_c")
-front, interp_change_rand, interp_change,  risk_c, err = df_linpred(front, "risk", "risk_c", 1, 0)
+def eval(mean, std, hrv, reward):
+    def normal_pdf(x, mu, sigma):
+        return 1/(sigma * np.sqrt(2*np.pi)) * np.exp(-0.5 * ((x - mu)/sigma)**2)
+    r = np.linspace(dmin, dmax, 1000)
+    dx = r[1] - r[0]
 
-df["score"] = df["risk_c"] / df["risk"]
+    pdf = normal_pdf(r, mean, std)
+    rew = np.sum(pdf * reward(r)) * dx
+    pen = np.sum(pdf * hrv(r)) * dx
 
-plt.scatter(df["risk"], df["risk_c"], color="orange")
-plt.scatter(front["risk"], front["risk_c"], color="blue")
-plt.plot(front["risk"], front["pred"], color="blue")
+    return rew - pen
 
-plt.show()
+for shift in range(2, 42):
+    k = make_df(shift)
+    k = k[k["aroll"].notna()]
+    k = k[k["astdroll"].notna()]
+    if k.size > 0:
+        #k["score"] = k.apply(lambda r : eval(r.ACRS, r.astdroll, risk_interp, func), axis=1)
+        k["score"] = k.apply(lambda r : eval(r.aroll, r.astdroll, risk_interp, func), axis=1)
+        top = k.sort_values("score", ascending=False)
+        vals = top[["aroll", "astdroll"]].head(1).to_numpy()[0]
+        value = top[["score"]].head(1).to_numpy()[0]
+        
+        print(shift, vals, value)
 
-plt.plot(df["ACRS"], df["risk"], label="hrv")
-plt.plot(df["ACRS"], df["risk_c"], label="ctl")
-plt.scatter(front["ACRS"], front["risk_c"], color="blue", label="front")
-plt.scatter(front["ACRS"], front["risk"], color="blue", label="front")
-plt.xlabel("acwr")
-plt.ylabel("risk")
-plt.hlines([0.5], dmin, dmax)
-plt.legend()
-plt.show()
-print("front")
-print(front.sort_values(by="risk"))
+
