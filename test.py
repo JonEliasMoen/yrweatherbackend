@@ -186,7 +186,7 @@ acrs = [
     1.1219114980177662,
 ]
 
-acrs = acwr
+#acrs = acwr
 
 def make_df(shift):
     data = {
@@ -201,7 +201,7 @@ def make_df(shift):
 
 shift = 6
 hrvshort = 4
-hrvlong = 8
+hrvlong = 6
 k = make_df(shift)
 k["change"] = (k["ctl"]-k["ctl"].shift(shift))/k["ctl"]
 k["HRV_ratio"] = k["hrv"].ewm(span=hrvshort, adjust=False).mean() / k["hrv"].ewm(span=hrvlong, adjust=False).mean()
@@ -291,19 +291,40 @@ def eval(mean, std, hrv, reward):
     rew = np.sum(pdf * reward(r)) * dx
     pen = np.sum(pdf * hrv(r)) * dx
 
-    return rew - pen
+    return rew/pen
 
-for shift in range(2, 42):
+result = {
+    "mean" : [],
+    "std" : [],
+    "val" : [],
+}
+
+for shift in range(2, 10):
     k = make_df(shift)
-    k = k[k["aroll"].notna()]
-    k = k[k["astdroll"].notna()]
     if k.size > 0:
         #k["score"] = k.apply(lambda r : eval(r.ACRS, r.astdroll, risk_interp, func), axis=1)
-        k["score"] = k.apply(lambda r : eval(r.aroll, r.astdroll, risk_interp, func), axis=1)
+        k["score"] = k.apply(lambda r : eval(r["aroll"], r.astdroll, risk_interp, func), axis=1)
         top = k.sort_values("score", ascending=False)
         vals = top[["aroll", "astdroll"]].head(1).to_numpy()[0]
         value = top[["score"]].head(1).to_numpy()[0]
 
-        print(shift, vals, value)
+        result["mean"].append(vals[0])
+        result["std"].append(vals[1])
+        result["val"].append(value[0])
+
+
+        k["score"] = k.apply(lambda r : eval(r.ACRS, r.astdroll, risk_interp, func), axis=1)
+        top = k.sort_values("score", ascending=False)
+        vals = top[["ACRS", "astdroll"]].head(1).to_numpy()[0]
+        value = top[["score"]].head(1).to_numpy()[0]
+
+        result["mean"].append(vals[0])
+        result["std"].append(vals[1])
+        result["val"].append(value[0])
+
+df = pd.DataFrame.from_dict(result).sort_values("val", ascending=False)
+print(df)
+print(eval(1, 0.1, risk_interp, func))
+
 
 
