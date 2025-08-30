@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, Response, redirect
 import requests
 import os
+from test import optimize
 
 app = Flask(__name__)
 app.config['CLIENT_SECRET'] = os.environ.get('CLIENT_SECRET', 'default_secret_key')
@@ -172,4 +173,19 @@ def strava_redirect():
         return add_cors_headers(redirect(f"com.joneliasmewoen.yrweather://settings?{query_params}"))
     else:
         return add_cors_headers(redirect(f"https://yrweather.expo.app/settings?{query_params}"))
+    
+@app.route("/optimize", methods=['POST', 'OPTIONS'])
+def hrv_acwr_opt():
+    if request.method == 'OPTIONS':
+        return handle_cors()
+    data = request.get_json()
+    hrv = data.get("hrv")
+    ctl = data.get("ctl")
+    acrs = data.get("acwr")
+    print(data)
+    result = optimize(acrs, ctl, hrv)
+    return add_cors_headers(jsonify(result))
+
+#if __name__ == "__main__":
+ #   app.run(debug=True, port=5000)
     
