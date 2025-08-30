@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, Response, redirect
 import requests
 import os
-from test import optimize
+from optimize import optimize
 
 app = Flask(__name__)
 app.config['CLIENT_SECRET'] = os.environ.get('CLIENT_SECRET', 'default_secret_key')
@@ -187,5 +187,5 @@ def hrv_acwr_opt():
     return add_cors_headers(jsonify(result))
 
 #if __name__ == "__main__":
- #   app.run(debug=True, port=5000)
+#    app.run(debug=True, port=5000)
     
