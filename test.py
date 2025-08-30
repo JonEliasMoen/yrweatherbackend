@@ -95,6 +95,51 @@ hrv = [
     105,
 ]
 
+acwr = [
+    0.6808408675518812,
+    0.7437095734862025,
+    0.8454693293702962,
+    0.750578453601512,
+    0.6663376657991456,
+    0.8347484369165533,
+    0.7410609200439201,
+    0.6578882837293247,
+    0.7115587443159684,
+    0.6316973767966487,
+    0.5607991613071195,
+    0.6473351035912801,
+    0.5746817806235528,
+    0.6478953951108585,
+    0.5751791760552017,
+    0.8246591451133023,
+    0.8146331939907743,
+    0.7232032357311137,
+    0.9391512730085192,
+    1.0170649651249473,
+    0.9029152256350167,
+    0.8015769844621503,
+    0.7966437407832712,
+    0.7072328042862503,
+    1.1915367608314933,
+    1.2677338267639564,
+    1.16742320321422,
+    1.0363980961330728,
+    0.9976684537388437,
+    1.1143023899621478,
+    1.3583618397334476,
+    1.2059069047626332,
+    1.289070709835651,
+    1.1443924847141567,
+    1.0159521340434519,
+    1.2074993653730737,
+    1.1703997207687873,
+    1.1780479420478631,
+    1.329326820872318,
+    1.1801305617807771,
+    1.047679136362662,
+    1.1181482866014647,
+    0.9926535443955324,
+]
 acrs = [
     0.6808408675518812,
     0.8119045996751121,
@@ -140,34 +185,77 @@ acrs = [
     1.4269987178769241,
     1.1219114980177662,
 ]
-max = np.ceil(np.max(acrs))
-dstd = np.std(acrs)
-min = np.floor(np.min(acrs))
+
+acrs = acwr
 
 
 data = {
     "acrs" : acrs,
     "ctl" : ctl,
+    
 }
+shift = 6
 k = pd.DataFrame.from_dict(data)
-k["aroll"] = k["acrs"].rolling(6).mean()
-k["change"] = (k["ctl"]-k["ctl"].shift(6))/k["ctl"]
+k["aroll"] = k["acrs"].rolling(shift).mean()
+k["astdroll"] = k["acrs"].rolling(shift).std()
+
+k["change"] = (k["ctl"]-k["ctl"].shift(shift))/k["ctl"]
 k = k.dropna()
 k = k.sort_values(by="aroll")
 
-def df_linpred(df, x, y, p):
+
+dmax = np.ceil(np.max(k["aroll"]))
+dstd = np.std(acrs)
+dmin = np.floor(np.min(k["aroll"]))
+
+
+def df_linpred(df, x, y, p, thres=1):
+    df = df.sort_values(x)
     coef = np.polyfit(df[x],df[y],p)
     poly1d_fn = np.poly1d(coef)
     df["pred"] = [poly1d_fn(z) for z in df[x].to_numpy()]
-    err = np.mean(np.abs(df["pred"]-df[y]))
-    return df, poly1d_fn, err
+    residuals = df[y] - df["pred"]
+    err = np.mean(np.abs(residuals))
+    resstd = residuals.std(ddof=1)
 
-k, interp_change, err = df_linpred(k, "aroll", "change", 2)
+    lower = lambda x : poly1d_fn(x) - resstd
+    higher = lambda x : poly1d_fn(x) +resstd
+    df["pred_l"] = [lower(z) for z in df[x].to_numpy()]
+    df["pred_h"] = [higher(z) for z in df[x].to_numpy()]
+
+    rng = np.random.default_rng()
+    final_s = lambda x: rng.normal(loc=poly1d_fn(x), scale=resstd)
+    final = poly1d_fn
+    risk = lambda x: max(0, min(1, (thres - lower(x)) / (higher(x) - lower(x))))
+
+    return df, final_s, final, risk, err
+
+
+def pareto_frontier(df, risk_col="suppression_risk", reward_col="ctl_change_pct"):
+    risk = df[risk_col].to_numpy()
+    reward = df[reward_col].to_numpy()
+    points = np.array(list(zip(risk, reward)))
+    is_efficient = np.ones(points.shape[0], dtype=bool)
+
+    for i, (r, re) in enumerate(points):
+        if is_efficient[i]:
+            is_efficient[is_efficient] = ~(
+                (risk[is_efficient] <= r) & (reward[is_efficient] < re)
+            )
+            is_efficient[i] = True
+    return df[is_efficient].sort_values(risk_col)
+
+k, interp_change_rand, interp_change,  risk_c, err = df_linpred(k, "aroll", "change", 2, 0)
+
+
 
 import matplotlib.pyplot as plt
 
 plt.plot(k["aroll"], k["pred"])
+plt.plot(k["aroll"], k["pred_l"])
+plt.plot(k["aroll"], k["pred_h"])
 plt.plot(k["aroll"], k["change"])
+plt.hlines([0], 0.6, 1.2)
 plt.title(str(err))
 plt.show()
 
@@ -186,83 +274,55 @@ df_hrv_ratio = pd.DataFrame({
     "HRV_ratio": hrv_ratio,
     "ACRS": acrs_series
 }).dropna()
-df_hrv_ratio = df_hrv_ratio.sort_values(by="ACRS")
 
+print(df_hrv_ratio)
 
 # Shift HRV ratio by +6 days (lag effect)
-df_hrv_ratio["HRVratio_plus6"] = df_hrv_ratio["HRV_ratio"].shift(-1)
+df_hrv_ratio["HRVratio_plus6"] = df_hrv_ratio["HRV_ratio"].shift(-shift)
 df_hrv_ratio = df_hrv_ratio.dropna()
 
-df_hrv_ratio, interp_change, err = df_linpred(df_hrv_ratio, "ACRS", "HRVratio_plus6", 1)
+df_hrv_ratio, hrv_interp_rand, hrv_interp, risk_interp, err = df_linpred(df_hrv_ratio, "ACRS", "HRVratio_plus6", 1, 1)
 
 
 plt.scatter(df_hrv_ratio["ACRS"], df_hrv_ratio["HRVratio_plus6"])
 plt.plot(df_hrv_ratio["ACRS"], df_hrv_ratio["pred"])
+plt.plot(df_hrv_ratio["ACRS"], df_hrv_ratio["pred_l"])
+plt.plot(df_hrv_ratio["ACRS"], df_hrv_ratio["pred_h"])
 plt.title(str(err))
 plt.show()
 
 
-# Bin ACRS values
-bin_edges = np.arange(min, max, 0.2)
-df_hrv_ratio["ACRS_bin"] = pd.cut(df_hrv_ratio["ACRS"], bins=bin_edges, include_lowest=True)
+test = {"ACRS" : np.linspace(dmin, dmax, 1000)}
+df = pd.DataFrame.from_dict(test)
+df = df_hrv_ratio
+def func(x):
+    if x > 1.1:
+        return 1
+    else:
+        return 1-risk_c(x)
 
-group_stats = df_hrv_ratio.groupby("ACRS_bin")["HRVratio_plus6"].agg(["mean", "std", "count"])
-bin_centers = np.array([interval.mid for interval in group_stats.index], dtype=float)
-mean_hrv    = group_stats["mean"].values
-supp_prob   = df_hrv_ratio.groupby("ACRS_bin")["HRVratio_plus6"].apply(lambda x: (x < 1.0).mean()).values
+df["change"] = interp_change(df["ACRS"])
+df["risk_c"] = [func(k) for k in df["ACRS"].to_numpy()]
+df["risk"] = [risk_interp(k) for k in df["ACRS"].to_numpy()]
+front = pareto_frontier(df, "risk", "risk_c")
+front, interp_change_rand, interp_change,  risk_c, err = df_linpred(front, "risk", "risk_c", 1, 0)
 
+df["score"] = df["risk_c"] / df["risk"]
 
-plt.plot(bin_centers, supp_prob)
+plt.scatter(df["risk"], df["risk_c"], color="orange")
+plt.scatter(front["risk"], front["risk_c"], color="blue")
+plt.plot(front["risk"], front["pred"], color="blue")
+
 plt.show()
 
-
-data = {
-    "bin" : bin_centers,
-    "mhrv" : mean_hrv,
-    "prob" : supp_prob,
-}
-k = pd.DataFrame.from_dict(data)
-print(k)
-
-print(bin_edges, supp_prob)
-# === Replacement interpolators (NumPy instead of SciPy) ===
-def hrv_interp(x):
-    return np.interp(x, bin_centers, mean_hrv, left=mean_hrv[0], right=mean_hrv[-1])
-
-def risk_interp(x):
-    return np.interp(x, bin_centers, supp_prob, left=supp_prob[0], right=supp_prob[-1])
-
-# === Simulation using ACRS ===
-def simulate_series(m=0.5, s=0.1, days=1000, low=min, high=max):
-    rng = np.random.default_rng()
-    acrs_path = np.clip(rng.normal(m, s, size=days), low, high)
-
-    ctl_change = float(np.mean([interp_change(k) for k in acrs_path]))
-    reward = float(np.mean(hrv_interp(acrs_path)))
-    risk   = float(np.mean(risk_interp(acrs_path)))
-    return {
-        "mean": m, "std": s,
-        "ctl_change_pct": ctl_change,
-        "exp_hrv_ratio": reward,
-        "suppression_risk": risk,
-    }
-
-# === Grid search across mean/std values ===
-means = np.arange(min, max, 0.1)
-stds  = [0.05, 0.1, 0.15, 0.2, 0.5, 1, 2]
-
-rows = []
-for m in means:
-    for s in stds:
-        rows.append(simulate_series(m, s, days=6))
-
-results_acrs = pd.DataFrame(rows)
-
-# Risk-adjusted score
-results_acrs["score"] = (
-    (results_acrs["exp_hrv_ratio"] - 1.0) +
-    0.5*(results_acrs["ctl_change_pct"]/100.0) -
-    results_acrs["suppression_risk"]
-)
-
-print(results_acrs.sort_values("score", ascending=False))
+plt.plot(df["ACRS"], df["risk"], label="hrv")
+plt.plot(df["ACRS"], df["risk_c"], label="ctl")
+plt.scatter(front["ACRS"], front["risk_c"], color="blue", label="front")
+plt.scatter(front["ACRS"], front["risk"], color="blue", label="front")
+plt.xlabel("acwr")
+plt.ylabel("risk")
+plt.hlines([0.5], dmin, dmax)
+plt.legend()
+plt.show()
+print("front")
+print(front.sort_values(by="risk"))
