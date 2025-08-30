@@ -200,9 +200,11 @@ def make_df(shift):
     return k
 
 shift = 6
+hrvshort = 4
+hrvlong = 8
 k = make_df(shift)
 k["change"] = (k["ctl"]-k["ctl"].shift(shift))/k["ctl"]
-k["HRV_ratio"] = k["hrv"].ewm(span=4, adjust=False).mean() / k["hrv"].ewm(span=8, adjust=False).mean()
+k["HRV_ratio"] = k["hrv"].ewm(span=hrvshort, adjust=False).mean() / k["hrv"].ewm(span=hrvlong, adjust=False).mean()
 
 
 k = k.dropna()
@@ -256,8 +258,7 @@ plt.hlines([0], 0.6, 1.2)
 plt.title(str(err))
 plt.show()
 
-import copy
-df_hrv_ratio = copy.copy(k)
+df_hrv_ratio = k
 print(df_hrv_ratio)
 
 # Shift HRV ratio by +6 days (lag effect)
@@ -302,7 +303,7 @@ for shift in range(2, 42):
         top = k.sort_values("score", ascending=False)
         vals = top[["aroll", "astdroll"]].head(1).to_numpy()[0]
         value = top[["score"]].head(1).to_numpy()[0]
-        
+
         print(shift, vals, value)
 
 
