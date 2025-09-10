@@ -6,6 +6,7 @@ import pandas as pd
 
 app = Flask(__name__)
 app.config['CLIENT_SECRET'] = os.environ.get('CLIENT_SECRET', 'default_secret_key')
+app.config['STORMGLASS'] = os.environ.get('STORMGLASS', 'default_secret_key')
 
 
 
@@ -117,7 +118,7 @@ def optimize(acrs, ctl, hrv):
         rew = np.sum(pdf * reward(r)) * dx
         pen = np.sum(pdf * hrv(r)) * dx
 
-        return rew/pen
+        return (rew/pen)
 
     result = {
         "mean" : [],
@@ -245,6 +246,41 @@ def skisporet(subpath):
         error_response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
         error_response.headers.add("Access-Control-Allow-Headers", "Content-Type")
         return error_response, 500
+
+@app.route('/stormglass/<path:subpath>', methods=['GET'])
+def stormglass(subpath):
+    """Proxy requests to stormglass"""
+    query_string = request.query_string.decode("utf-8")
+    stormglass_url = f"https://api.stormglass.io/{subpath}"
+    if query_string:
+        stormglass_url += f"?{query_string}"
+
+    headers = {
+        "Authorization": app.config['STORMGLASS'],
+    }
+
+    try:
+        response = requests.get(stormglass_url, headers=headers)
+
+        try:
+            data = response.json()
+            flask_response = jsonify(data)
+        except ValueError:
+            flask_response = Response(response.text, content_type=response.headers.get('Content-Type', 'text/plain'))
+
+        flask_response.headers.add("Access-Control-Allow-Origin", "*")
+        flask_response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
+        flask_response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+
+        return flask_response, response.status_code
+
+    except requests.exceptions.RequestException as e:
+        error_response = jsonify({"error": "Failed to fetch data", "details": str(e)})
+        error_response.headers.add("Access-Control-Allow-Origin", "*")
+        error_response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
+        error_response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+        return error_response, 500
+
 
 @app.route('/about')
 def about():
