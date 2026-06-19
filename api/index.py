@@ -373,6 +373,17 @@ def hrv_acwr_opt():
     result = optimize(acrs, ctl, hrv)
     return add_cors_headers(jsonify(result))
 
+@app.route("/longforecast", methods=['GET', 'OPTIONS'])
+def longyrforecast():
+    if request.method == 'OPTIONS':
+        return handle_cors()
+
+    lat = request.args.get('lat')
+    long = request.args.get('long')
+    response = requests.get(f'https://www.yr.no/api/v0/locations/{lat},{long}/forecast')
+
+    return handle_response(response)
+
 #if __name__ == "__main__":
 #    app.run(debug=True, port=5000)
     
