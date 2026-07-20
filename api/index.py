@@ -270,6 +270,20 @@ def callback():
         "state": data["state"],
     })))
 
+@app.route("/tidal/<path:path>", methods=["GET", "POST", "PUT", "DELETE"])
+def tidal_proxy(path):
+    response = requests.request(
+        request.method,
+        f"https://openapi.tidal.com/v2/{path}",
+        params=request.args,
+        json=request.get_json(silent=True),
+        headers={
+            "Authorization": request.headers.get("Authorization"),
+            "Content-Type": "application/json",
+        },
+    )
+    return handle_response(response)
+    
 @app.post("/token")
 def token():
     return jsonify(pending.pop(request.form["code"]))
