@@ -2,10 +2,17 @@ from flask import Flask, request, jsonify, Response, redirect
 import requests
 import os
 import numpy as np
+import os, secrets, hashlib, base64
+from urllib.parse import urlencode
 
 app = Flask(__name__)
 app.config['CLIENT_SECRET'] = os.environ.get('CLIENT_SECRET', 'default_secret_key')
 app.config['STORMGLASS'] = os.environ.get('STORMGLASS', 'default_secret_key')
+
+app.config['TIDAL_CLIENT_ID'] = os.environ["TIDAL_CLIENT_ID"]
+app.config['TIDAL_CLIENT_SECRET'] = os.environ["TIDAL_CLIENT_SECRET"]
+app.config['BASE_URL'] = os.environ["BASE_URL"]
+
 
 
 @app.route('/<path:subpath>', methods=['GET', 'OPTIONS'])
@@ -209,6 +216,63 @@ def strava_redirect():
         return add_cors_headers(redirect(f"com.joneliasmewoen.yrweather://settings?{query_params}"))
     else:
         return add_cors_headers(redirect(f"https://yrweather.expo.app/settings?{query_params}"))
+
+
+
+pending = {}
+
+@app.get("/authorize")
+def authorize():
+    verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()
+    ).rstrip(b"=").decode()
+
+    key = secrets.token_urlsafe(16)
+    pending[key] = {
+        "verifier": verifier,
+        "state": request.args["state"],
+        "redirect_uri": request.args["redirect_uri"],
+    }
+
+    params = {
+        "response_type": "code",
+        "client_id": app.config['TIDAL_CLIENT_ID'],
+        "redirect_uri": f"{app.config['BASE_URL']}/callback",
+        "scope": request.args.get("scope", ""),
+        "state": key,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+    }
+
+    return add_cors_headers(redirect("https://login.tidal.com/authorize?" + urlencode(params)))
+
+@app.get("/callback")
+def callback():
+    data = pending.pop(request.args["state"])
+
+    token = requests.post(
+        "https://auth.tidal.com/v1/oauth2/token",
+        auth=(app.config['TIDAL_CLIENT_ID'], app.config['TIDAL_CLIENT_SECRET']),
+        data={
+            "grant_type": "authorization_code",
+            "code": request.args["code"],
+            "redirect_uri": f"{(app.config['BASE_URL']}/callback",
+            "code_verifier": data["verifier"],
+        },
+    ).json()
+
+    code = secrets.token_urlsafe(24)
+    pending[code] = token
+
+    return add_cors_headers(redirect(data["redirect_uri"] + "?" + urlencode({
+        "code": code,
+        "state": data["state"],
+    })))
+
+@app.post("/token")
+def token():
+    return jsonify(pending.pop(request.form["code"]))
 
 @app.route("/longforecast", methods=['GET', 'OPTIONS'])
 def longyrforecast():
