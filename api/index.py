@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify, Response, redirect
 import requests
 import os
-import numpy as np
 import os, secrets, hashlib, base64
 from urllib.parse import urlencode
 
@@ -149,17 +148,17 @@ def get_refresh_token():
         return handle_cors()
 
     code = request.args.get('code')
-    
+
     if not code:
         return jsonify({'error': 'Missing authorization code'}), 400
-    
+
     response = requests.post('https://www.strava.com/oauth/token', params={
         'client_id': '108568',
         'client_secret': app.config['CLIENT_SECRET'],
         'code': code,
         'grant_type': 'authorization_code'
     })
-    
+
     return handle_response(response)
 
 @app.route('/strava/exchange', methods=['GET', 'OPTIONS'])
@@ -169,10 +168,10 @@ def exchange_refresh_token():
         return handle_cors()
 
     refresh_token = request.args.get('refresh_token')
-    
+
     if not refresh_token:
         return jsonify({'error': 'Missing refresh token'}), 400
-    
+
     response = requests.post('https://www.strava.com/api/v3/oauth/token', params={
         'client_id': '108568',
         'client_secret': app.config['CLIENT_SECRET'],
@@ -188,7 +187,7 @@ def handle_response(response):
         response_data = response.json()
     except ValueError:
         return jsonify({'error': 'Invalid JSON response from Strava'}), 500
-    
+
     flask_response = jsonify(response_data)
     flask_response.status_code = response.status_code
     return add_cors_headers(flask_response)
@@ -272,6 +271,7 @@ def callback():
 
 @app.route("/tidal/<path:path>", methods=["GET", "POST", "PUT", "DELETE"])
 def tidal_proxy(path):
+    print("INCOMING:", request.content_type, request.get_data(as_text=True))
     response = requests.request(
         request.method,
         f"https://openapi.tidal.com/v2/{path}",
@@ -279,8 +279,8 @@ def tidal_proxy(path):
         data=request.get_data(),
         headers={
             "Authorization": request.headers.get("Authorization"),
-            "Accept": "application/vnd.api+json",
             "Content-Type": "application/vnd.api+json",
+            "Accept": "application/vnd.api+json",
         },
     )
 
@@ -294,7 +294,7 @@ def tidal_proxy(path):
             "application/vnd.api+json",
         ),
     )
-    
+
 @app.post("/token")
 def token():
     return jsonify(pending.pop(request.form["code"]))
@@ -312,4 +312,3 @@ def longyrforecast():
 
 #if __name__ == "__main__":
 #    app.run(debug=True, port=5000)
-    
