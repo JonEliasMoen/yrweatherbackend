@@ -276,13 +276,24 @@ def tidal_proxy(path):
         request.method,
         f"https://openapi.tidal.com/v2/{path}",
         params=request.args,
-        json=request.get_json(silent=True),
+        data=request.get_data(),
         headers={
             "Authorization": request.headers.get("Authorization"),
-            "Content-Type": "application/json",
+            "Accept": "application/vnd.api+json",
+            "Content-Type": "application/vnd.api+json",
         },
     )
-    return handle_response(response)
+
+    print(response.status_code, response.url, response.text)
+
+    return Response(
+        response.content,
+        status=response.status_code,
+        content_type=response.headers.get(
+            "Content-Type",
+            "application/vnd.api+json",
+        ),
+    )
     
 @app.post("/token")
 def token():
