@@ -257,7 +257,7 @@ def callback():
         data={
             "grant_type": "authorization_code",
             "code": request.args["code"],
-            "redirect_uri": f"{(app.config['BASE_URL']}/callback",
+            "redirect_uri": f"{app.config['BASE_URL']}/callback",
             "code_verifier": data["verifier"],
         },
     ).json()
